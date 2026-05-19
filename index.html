@@ -224,7 +224,7 @@
                     </div>
                     <div class="form-group">
                         <label for="monto">Monto (en Bs.)</label>
-                        <input type="number" id="monto" step="any" placeholder="Ej. 450.50" required>
+                        <input type="text" id="monto" placeholder="Ej. 207.218,13" required>
                     </div>
                     <div class="form-group">
                         <label for="categoria">Categoría</label>
@@ -273,14 +273,17 @@
     </div>
 
     <script>
-        // Tu enlace de SheetDB de confianza
+// Tu enlace de SheetDB
         const apiURL = "https://sheetdb.io/api/v1/r065av9gcbpyr";
         let expenseChartObj = null;
 
-        // Poner la fecha de hoy por defecto en el formulario
         document.getElementById('fecha').valueAsDate = new Date();
 
-        // Función para cargar todos los datos desde Google Sheets
+        // Función para darle formato venezolano (puntos para miles, coma para decimales)
+        function formatoBs(numero) {
+            return numero.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
         async function cargarDatos() {
             try {
                 const response = await fetch(apiURL);
@@ -290,7 +293,6 @@
                 let gastosTotales = 0;
                 let tablaHTML = "";
                 
-                // Objeto para acumular gastos por categoría para el gráfico
                 const gastosPorCategoria = {
                     "Suscripciones": 0,
                     "Transporte": 0,
@@ -299,7 +301,6 @@
                     "Otros": 0
                 };
 
-                // Procesamos cada fila al revés para ver lo más nuevo primero
                 datos.reverse().forEach(item => {
                     const montoNum = parseFloat(item.monto) || 0;
                     
@@ -311,13 +312,12 @@
                                 <td>${item.tipo}</td>
                                 <td>${item.categoria}</td>
                                 <td>${item.descripcion}</td>
-                                <td class="monto-ingreso">Bs. ${montoNum.toFixed(2)}</td>
+                                <td class="monto-ingreso">Bs. ${formatoBs(montoNum)}</td>
                             </tr>
                         `;
                     } else if (item.tipo === "Gasto") {
                         gastosTotales += montoNum;
                         
-                        // Si la categoría existe en nuestro mapa, sumamos
                         if (gastosPorCategoria[item.categoria] !== undefined) {
                             gastosPorCategoria[item.categoria] += montoNum;
                         } else {
@@ -330,24 +330,20 @@
                                 <td>${item.tipo}</td>
                                 <td>${item.categoria}</td>
                                 <td>${item.descripcion}</td>
-                                <td class="monto-gasto">Bs. ${montoNum.toFixed(2)}</td>
+                                <td class="monto-gasto">Bs. ${formatoBs(montoNum)}</td>
                             </tr>
                         `;
                     }
                 });
 
-                // Calcular el balance final
                 const balanceFinal = ingresosTotales - gastosTotales;
 
-                // Actualizar las tarjetas de la pantalla
-                document.getElementById('balance-total').innerText = `Bs. ${balanceFinal.toFixed(2)}`;
-                document.getElementById('total-ingresos').innerText = `Bs. ${ingresosTotales.toFixed(2)}`;
-                document.getElementById('total-gastos').innerText = `Bs. ${gastosTotales.toFixed(2)}`;
+                document.getElementById('balance-total').innerText = `Bs. ${formatoBs(balanceFinal)}`;
+                document.getElementById('total-ingresos').innerText = `Bs. ${formatoBs(ingresosTotales)}`;
+                document.getElementById('total-gastos').innerText = `Bs. ${formatoBs(gastosTotales)}`;
 
-                // Insertar las filas en la tabla
                 document.getElementById('table-body').innerHTML = tablaHTML;
 
-                // Dibujar o actualizar el gráfico de torta
                 actualizarGrafico(gastosPorCategoria);
 
             } catch (error) {
@@ -355,14 +351,11 @@
             }
         }
 
-        // Función para actualizar el gráfico de Chart.js
         function actualizarGrafico(datosGastos) {
             const ctx = document.getElementById('expenseChart').getContext('2d');
-            
             const categorias = Object.keys(datosGastos);
             const montos = Object.values(datosGastos);
 
-            // Si el gráfico ya existe, lo destruimos para volverlo a pintar limpio
             if (expenseChartObj) {
                 expenseChartObj.destroy();
             }
@@ -380,35 +373,34 @@
                 options: {
                     responsive: true,
                     plugins: {
-                        legend: {
-                            position: 'bottom',
-                        }
+                        legend: { position: 'bottom' }
                     }
                 }
             });
         }
 
-        // Evento para enviar un nuevo registro a Google Sheets
         document.getElementById('finance-form').addEventListener('submit', async (e) => {
-            e.preventDefault(); // Evita que la página se recargue sola
+            e.preventDefault();
 
             const btn = document.getElementById('btn-guardar');
             btn.innerText = "Guardando...";
             btn.disabled = true;
 
-            // Agarrar los datos de las cajitas del formulario
             const fecha = document.getElementById('fecha').value;
             const tipo = document.getElementById('tipo').value;
-            const monto = document.getElementById('monto').value;
+            let monto = document.getElementById('monto').value;
             const categoria = document.getElementById('categoria').value;
             const descripcion = document.getElementById('descripcion').value;
+
+            // Limpiar el monto: quitamos puntos de miles y cambiamos la coma a punto decimal
+            let montoLimpio = monto.replace(/\./g, '').replace(',', '.');
 
             const nuevoRegistro = {
                 data: [
                     {
                         fecha: fecha,
                         tipo: tipo,
-                        monto: monto,
+                        monto: montoLimpio, 
                         categoria: categoria,
                         descripcion: descripcion
                     }
@@ -416,27 +408,21 @@
             };
 
             try {
-                // Hacer el envío por POST a SheetDB
                 const response = await fetch(apiURL, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(nuevoRegistro)
                 });
 
                 if (response.ok) {
-                    // Si todo salió bien, limpiar las cajitas (menos la fecha)
                     document.getElementById('monto').value = "";
                     document.getElementById('descripcion').value = "";
-                    
-                    // Volver a leer la base de datos para mostrar el cambio al tiro
                     await cargarDatos();
                 } else {
-                    alert("Hubo un detalle al guardar. Intenta de nuevo.");
+                    alert("Hubo un problema al guardar. Intenta de nuevo.");
                 }
             } catch (error) {
-                console.error("Error guardando el registro:", error);
+                console.error("Error guardando:", error);
                 alert("Error de conexión al guardar.");
             } finally {
                 btn.innerText = "Guardar Registro";
@@ -444,7 +430,6 @@
             }
         });
 
-        // Arrancar la página cargando lo que ya tengas registrado
         cargarDatos();
     </script>
 </body>
